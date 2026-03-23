@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, Property } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Plus, LogOut, Home, Users, Loader2, X, Check } from 'lucide-react'
+import { Plus, LogOut, Home, Users, Loader2, X, Check, Upload } from 'lucide-react'
 
 export default function AdminPanel() {
   const router = useRouter()
@@ -11,6 +11,9 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploadingImages, setUploadingImages] = useState(false)
+  const [previewImages, setPreviewImages] = useState<string[]>([])
+  const [imageFiles, setImageFiles] = useState<File[]>([])
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviting, setInviting] = useState(false)
   const [inviteSuccess, setInviteSuccess] = useState(false)
@@ -40,13 +43,46 @@ export default function AdminPanel() {
     setLoading(false)
   }
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    setImageFiles(prev => [...prev, ...files])
+    const previews = files.map(f => URL.createObjectURL(f))
+    setPreviewImages(prev => [...prev, ...previews])
+  }
+
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index))
+    setPreviewImages(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const uploadImages = async (propertyId: string): Promise<string[]> => {
+    const urls: string[] = []
+    for (const file of imageFiles) {
+      const ext = file.name.split('.').pop()
+      const path = `${propertyId}/${Date.now()}.${ext}`
+      const { error } = await supabase.storage
+        .from('property-images')
+        .upload(path, file, { cacheControl: '3600', upsert: false })
+      if (!error) {
+        const { data } = supabase.storage
+          .from('property-images')
+          .getPublicUrl(path)
+        urls.push(data.publicUrl)
+      }
+    }
+    return urls
+  }
+
   const handleSave = async () => {
     if (!form.name || !form.price_per_night) {
       alert('Completá nombre y precio.')
       return
     }
     setSaving(true)
-    const { error } = await supabase.from('properties').insert([{
+    setUploadingImages(true)
+
+    const { data: newProp, error } = await supabase.from('properties').insert([{
       name: form.name,
       description: form.description,
       address: form.address,
@@ -59,12 +95,29 @@ export default function AdminPanel() {
       images: [],
       amenities: [],
     }])
-    setSaving(false)
-    if (!error) {
-      setShowForm(false)
-      setForm({ name: '', description: '', address: '', capacity: '4', bedrooms: '2', bathrooms: '1', price_per_night: '', owner_name: '', owner_phone: '' })
-      loadProperties()
+    .select()
+    .single()
+
+    if (error || !newProp) {
+      setSaving(false)
+      setUploadingImages(false)
+      alert('Error al guardar.')
+      return
     }
+
+    let imageUrls: string[] = []
+    if (imageFiles.length > 0) {
+      imageUrls = await uploadImages(newProp.id)
+      await supabase.from('properties').update({ images: imageUrls }).eq('id', newProp.id)
+    }
+
+    setUploadingImages(false)
+    setSaving(false)
+    setShowForm(false)
+    setForm({ name: '', description: '', address: '', capacity: '4', bedrooms: '2', bathrooms: '1', price_per_night: '', owner_name: '', owner_phone: '' })
+    setImageFiles([])
+    setPreviewImages([])
+    loadProperties()
   }
 
   const handleInvite = async () => {
@@ -220,6 +273,30 @@ export default function AdminPanel() {
             </div>
 
             <div className="space-y-4">
+              {/* Upload de fotos */}
+              <div>
+                <label className="font-body text-xs uppercase tracking-widest text-[var(--dusk)]/40 mb-2 block">
+                  Fotos de la propiedad
+                </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {previewImages.map((src, i) => (
+                    <div key={i} className="relative w-20 h-20">
+                      <img src={src} alt="" className="w-20 h-20 object-cover rounded-xl" />
+                      <button
+                        onClick={() => removeImage(i)}
+                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                  <label className="w-20 h-20 rounded-xl border-2 border-dashed border-[var(--dusk)]/20 flex flex-col items-center justify-center cursor-pointer hover:border-[var(--ocean-deep)] transition-colors">
+                    <Upload size={16} className="text-[var(--dusk)]/30" />
+                    <span className="font-body text-[10px] text-[var(--dusk)]/30 mt-1">Agregar</span>
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
+                  </label>
+                </div>
+              </div>
               {[
                 { label: 'Nombre *', key: 'name', placeholder: 'Casa La Dunas' },
                 { label: 'Dirección', key: 'address', placeholder: 'Calle 25 N°480, Monte Hermoso' },
@@ -281,7 +358,7 @@ export default function AdminPanel() {
                 style={{ background: 'var(--ocean-deep)' }}
               >
                 {saving && <Loader2 size={16} className="animate-spin" />}
-                {saving ? 'Guardando...' : 'Guardar propiedad'}
+                {saving ? uploadingImages ? 'Subiendo fotos...' : 'Guardando...' : 'Guardar propiedad'}
               </button>
             </div>
           </div>
