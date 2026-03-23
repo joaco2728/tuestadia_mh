@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, Property } from '@/lib/supabase'
 import { Users, BedDouble, Bath, ArrowRight } from 'lucide-react'
+import Link from 'next/link'
 
 export default function PropertyGrid() {
   const [properties, setProperties] = useState<Property[]>([])
@@ -63,8 +64,9 @@ function PropertyCard({ property: p, index }: { property: Property; index: numbe
   const img = p.images?.[0] || `https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80`
 
   return (
-    <div
-      className="group rounded-2xl overflow-hidden bg-white shadow-sm hover:shadow-xl transition-all duration-500 opacity-0 animate-fade-up cursor-pointer"
+    <Link
+      href={`/propiedad/${p.id}`}
+      className="group rounded-2xl overflow-hidden bg-white shadow-sm hover:shadow-xl transition-all duration-500 opacity-0 animate-fade-up cursor-pointer block"
       style={{ animationDelay: `${index * 0.08}s`, animationFillMode: 'forwards' }}
     >
       {/* Image */}
@@ -106,6 +108,6 @@ function PropertyCard({ property: p, index }: { property: Property; index: numbe
           </span>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
